@@ -70,11 +70,16 @@ if ~isfile('utils/dicominfo_fastversion.m')
 end
 
 softlist = readcell('softlist.csv');
+[r,c] = size(softlist);
+for i =1:r
+    for j = 1:c
+        if (ismissing(softlist{i,j})) %% replace the missing value with 0x0 double
+            softlist{i,j}=[];
+        end
+    end
+end
 handles.inputarg = softlist(2, 2:end);
 handles.default_arg = softlist(3, 2:end);
-% handles.inputarg = load('softlist.mat').softlist(2, 2:end);
-% handles.default_arg = load('softlist.mat').softlist(3, 2:end);
-
 handles.currsoft = 1; % defult current soft in soft list, 1 means fastserver
 set(handles.software_list,'string',softlist(1, 2:end));
 set(handles.input_arg_edit,'string',handles.default_arg(handles.currsoft));
@@ -209,6 +214,8 @@ if isempty(r{1})
     temp2{:,13} = file; %store nii filename;
     if ~isempty(dicomfilelist)
         temp2{:,14} = dicomfilelist;
+    else
+        temp2{:,14} = [];
     end
     if isempty(handles.job_content{3})
         handles.job_content = temp2;
@@ -219,6 +226,23 @@ if isempty(r{1})
     set(handles.job_table, 'Unit','characters','Data',job_show);
     [job_msg, job_result] = jobmgr.server.control('check_job',handles.job_content{end,12});
     msgbox(job_msg);
+else
+    temp2 = {'Action' 'Completed'};
+    temp2(3) = append(currsof,' ',argument);
+    temp2(:, 4:10) = get_content;
+    temp2{:,11} = sofidx;
+    temp2{:,12} = jobmgr.struct_hash(clientdata); %find the key of this job in the hash map
+    temp2{:,13} = file; %store nii filename;
+    if ~isempty(dicomfilelist)
+        temp2{:,14} = dicomfilelist;
+    end
+    if isempty(handles.job_content{3})
+        handles.job_content = temp2;
+    else
+        handles.job_content(end+1,:) = temp2;
+    end
+    job_show = handles.job_content(:,1:10);
+    set(handles.job_table, 'Unit','characters','Data',job_show);
 end
 guidata(hObject,handles);
     
@@ -388,22 +412,29 @@ if table_info{idx(1),4}
                 return;
             end
             r = jobmgr.recall(@jobmgr.example.solver, hash);
-            if isempty(r)                
+            if isempty(r)
                 if strcmp(response_msg,'OK')
                     handles.job_content(idx(1),:) = [];
                     if isempty(handles.job_content)
-                        handles.job_content = cell(1,13);
+                        handles.job_content = cell(1,14);
                     end
                     handles.job_content{idx(1),1} = 'Action';
                     job_show = handles.job_content(:,1:10);
                     set(handles.job_table, 'Unit','characters','Data',job_show);
-                    waitfor(msgbox('This job has been canceled in server.'));
+                    msgbox('This job has been canceled in server.');
                 end
             else
-                waitfor(msgbox('Cannot cancel a job which is being processing in server.'));
+                handles.job_content(idx(1), :) = [];
+                if isempty(handles.job_content)
+                    handles.job_content = cell(1,14);
+                end
                 handles.job_content{idx(1),1} = 'Action';
                 job_show = handles.job_content(:,1:10);
                 set(handles.job_table, 'Unit','characters','Data',job_show);
+                %                 msgbox('Cannot cancel a job which is being processing in server.');
+                %                 handles.job_content{idx(1),1} = 'Action';
+                %                 job_show = handles.job_content(:,1:10);
+                %                 set(handles.job_table, 'Unit','characters','Data',job_show);
             end
             
         case 'View results'
@@ -416,21 +447,32 @@ if table_info{idx(1),4}
                 job_show = handles.job_content(:,1:10);
                 set(handles.job_table, 'Unit','characters','Data',job_show);
             else
-                waitfor(msgbox('There is no result for this job. Please choose "check job".'));
+                msgbox('There is no result for this job. Please choose "check job".');
                 handles.job_content{idx(1),1} = 'Action';
                 job_show = handles.job_content(:,1:10);
                 set(handles.job_table, 'Unit','characters','Data',job_show);
-
+                
             end
         case 'Export results'
             if ~strcmp(handles.job_content(idx(1), 2), 'Submitted') && (handles.job_content{idx(1), 11}==1 || handles.job_content{idx(1), 11}==2)
                 
-                [result,in_cache] = jobmgr.recall(@jobmgr.example.solver,handles.job_content{idx(1),12});
+                %                 [result,in_cache] = jobmgr.recall(@jobmgr.example.solver,handles.job_content{idx(1),12});
                 %[file,path,indx] = uiputfile('outputfile');
-%                 path = uigetdir();
+                %                 path = uigetdir();
                 path = 1;
                 if path
-                    DICOMRT_conversion_v01152021(handles.job_content{idx(1), 13}, handles.job_content{idx(1), 14}, handles.job_content{idx(1), 12}, handles.job_content{idx(1), 11});
+                    isexported = Export_file_GUI(handles.job_content{idx(1), 13}, handles.job_content{idx(1), 14}, handles.job_content{idx(1), 12}, handles.job_content{idx(1), 11});
+                    if isexported
+                        handles.job_content{idx(1),2} = 'Exported';
+                        handles.job_content{idx(1),1} = 'Action';
+                        job_show = handles.job_content(:,1:10);
+                        set(handles.job_table, 'Unit','characters','Data',job_show);
+                    else
+                        handles.job_content{idx(1),1} = 'Action';
+                        job_show = handles.job_content(:,1:10);
+                        set(handles.job_table, 'Unit','characters','Data',job_show);
+                    end
+%                     DICOMRT_conversion_v01152021(handles.job_content{idx(1), 13}, handles.job_content{idx(1), 14}, handles.job_content{idx(1), 12}, handles.job_content{idx(1), 11});
 %                     bar = waitbar(0,'Exporting the file........');
 %                     waitbar(0.2);
 %                     fileID = fopen('DeepNI_files\contour.nii','w+');%write contour file to pwd
@@ -479,7 +521,7 @@ if table_info{idx(1),4}
                end
                
             else
-               waitfor(msgbox('There is no result for this job to export. Please choose "check job".'));
+               msgbox('There is no result for this job to export. Please choose "check job".');
                handles.job_content{idx(1),1} = 'Action';
                job_show = handles.job_content(:,1:10);
                set(handles.job_table, 'Unit','characters','Data',job_show);
